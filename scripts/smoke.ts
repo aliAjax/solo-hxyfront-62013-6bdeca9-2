@@ -84,14 +84,24 @@ console.log("4) 放弃调整");
 console.log("5) 并发版本冲突 + 个人草稿");
 {
   runScenario("concurrency", { service: scheduleService, user: U });
-  const out = scheduleService.commit(U, "我的油饰工序微调");
+  const out = scheduleService.commit(U, "斗栱修整顺延两天");
   assert(out.type === "conflict", "基于过期版本提交 -> 版本冲突");
   if (out.type === "conflict") {
     assert(out.baseVersion < out.currentVersion, "返回的版本号显示他人已提交新版");
-    const drafts = scheduleService.listDrafts();
+    const drafts = scheduleService.listDrafts(U);
     assert(drafts.length === 1 && drafts[0].user === U, "个人调整已保留为草稿");
-    const ok = scheduleService.applyDraft(drafts[0].id, U);
-    assert(ok, "草稿可重放到最新版本");
+    const draftId = drafts[0].id;
+
+    // 身份隔离：其他身份不可见、不可套用、不可清除
+    const OTHER = "王工（彩画负责人）";
+    assert(scheduleService.listDrafts(OTHER).length === 0, "其他身份看不到该草稿");
+    assert(scheduleService.applyDraft(draftId, OTHER) === false, "其他身份套用他人草稿被拒绝");
+    scheduleService.deleteDraft(draftId, OTHER);
+    assert(scheduleService.listDrafts(U).length === 1, "其他身份无法清除他人草稿");
+
+    // 创建人本人可重放
+    const ok = scheduleService.applyDraft(draftId, U);
+    assert(ok, "创建人可把草稿重放到最新版本");
     const v = scheduleService.getWorkingView(U)!;
     assert(v.hasPatch, "重放后调整重新出现在待提交区");
     assert(scheduleService.getSession(U)?.baseVersion === out.currentVersion, "待提交区基线已更新为最新版本");
@@ -113,6 +123,59 @@ console.log("7) 班组资质");
   scheduleService.patchTask(U, "ncs_pest_fumigate", { crewId: "paint1" });
   const v = scheduleService.getWorkingView(U)!;
   assert(v.issues.some((i) => i.kind === "qualification" && i.taskId === "ncs_pest_fumigate"), "无资质班组被检出");
+}
+
+console.log("8) 清空班组 -> 阻断提交，补齐后可提交");
+{
+  fresh();
+  const baseVersion = scheduleService.getPlan()!.version;
+  scheduleService.patchTask(U, "fgs_rot_paint", { crewId: null });
+  let v = scheduleService.getWorkingView(U)!;
+  assert(
+    v.issues.some((i) => i.severity === "error" && i.kind === "qualification" && i.taskId === "fgs_rot_paint"),
+    "清空班组被标记为阻断冲突"
+  );
+  let out = scheduleService.commit(U, "缺班组");
+  assert(out.type === "invalid", "缺少必要班组时确认提交被阻止");
+  assert(scheduleService.getPlan()!.version === baseVersion, "被阻止后不产生新版本");
+
+  // 补齐为有资质且该时段空闲的班组
+  scheduleService.patchTask(U, "fgs_rot_paint", { crewId: "caihui1" });
+  v = scheduleService.getWorkingView(U)!;
+  assert(v.errorCount === 0, `补齐班组后无阻断冲突（实际 ${v.errorCount}）`);
+  out = scheduleService.commit(U, "油饰改派五队");
+  assert(out.type === "committed" && out.plan.version === baseVersion + 1, "补齐班组后合规提交成功并产生新版本");
+}
+
+console.log("9) 未排期 -> 阻断提交，补齐开工日后可提交");
+{
+  fresh();
+  const baseVersion = scheduleService.getPlan()!.version;
+  scheduleService.patchTask(U, "fgs_rot_paint", { start: null });
+  let v = scheduleService.getWorkingView(U)!;
+  assert(
+    v.issues.some((i) => i.severity === "error" && i.taskId === "fgs_rot_paint"),
+    "未排定工期被标记为阻断冲突"
+  );
+  let out = scheduleService.commit(U, "缺工期");
+  assert(out.type === "invalid", "未排期时确认提交被阻止");
+  assert(scheduleService.getPlan()!.version === baseVersion, "被阻止后不产生新版本");
+
+  // 补齐合法开工日（前序 tenon 完工之后）
+  scheduleService.patchTask(U, "fgs_rot_paint", { start: 9 });
+  v = scheduleService.getWorkingView(U)!;
+  assert(v.errorCount === 0, `补齐开工日后无阻断冲突（实际 ${v.errorCount}）`);
+  out = scheduleService.commit(U, "补齐排期");
+  assert(out.type === "committed" && out.plan.version === baseVersion + 1, "补齐开工日后合规提交成功");
+}
+
+console.log("10) 身份切换：待提交区也按身份隔离");
+{
+  fresh();
+  const OTHER = "李工（项目管理员）";
+  scheduleService.patchTask(U, "fgs_rot_paint", { start: 12 });
+  assert(scheduleService.getWorkingView(U)!.hasPatch, "本人可见自己的待提交调整");
+  assert(!scheduleService.getWorkingView(OTHER)!.hasPatch, "切换到其他身份看不到本人的待提交调整");
 }
 
 console.log(failures === 0 ? "\n全部通过 ✅" : `\n${failures} 项失败 ❌`);

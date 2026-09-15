@@ -35,23 +35,31 @@ export class LocalPlanRepository implements PlanRepositoryPort {
     localStorage.setItem(VERSIONS_KEY, JSON.stringify(all));
   }
 
-  listDrafts(): Draft[] {
+  listDrafts(user: string): Draft[] {
     try {
-      return JSON.parse(localStorage.getItem(DRAFTS_KEY) ?? "[]") as Draft[];
+      const all = JSON.parse(localStorage.getItem(DRAFTS_KEY) ?? "[]") as Draft[];
+      // 个人草稿只对创建人可见
+      return all.filter((d) => d.user === user);
     } catch {
       return [];
     }
   }
 
   saveDraft(draft: Draft): void {
-    const all = this.listDrafts().filter((d) => d.id !== draft.id);
-    all.push(draft);
+    const all = JSON.parse(localStorage.getItem(DRAFTS_KEY) ?? "[]") as Draft[];
+    const idx = all.findIndex((d) => d.id === draft.id);
+    if (idx >= 0) all[idx] = draft;
+    else all.push(draft);
     localStorage.setItem(DRAFTS_KEY, JSON.stringify(all));
   }
 
-  deleteDraft(id: string): void {
-    const all = this.listDrafts().filter((d) => d.id !== id);
-    localStorage.setItem(DRAFTS_KEY, JSON.stringify(all));
+  deleteDraft(id: string, user: string): void {
+    // 仅创建人本人可删除：先过滤归属，避免误删/越权清除他人草稿
+    const all = JSON.parse(localStorage.getItem(DRAFTS_KEY) ?? "[]") as Draft[];
+    localStorage.setItem(
+      DRAFTS_KEY,
+      JSON.stringify(all.filter((d) => !(d.id === id && d.user === user)))
+    );
   }
 
   reset(): void {

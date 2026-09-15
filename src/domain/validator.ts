@@ -85,7 +85,7 @@ export function validate(input: ValidateInput): Issue[] {
   for (const t of tasks) {
     const crew = t.crewId ? crewMap.get(t.crewId) : undefined;
 
-    // 1) 班组资质
+    // 1) 班组资质（未指派班组同样阻断提交：新版本不得缺少必要班组）
     if (t.crewId && crew && !crew.crafts.includes(t.craft)) {
       push({
         kind: "qualification",
@@ -95,23 +95,24 @@ export function validate(input: ValidateInput): Issue[] {
       });
     }
     if (!t.crewId) {
-      const anyQualified = crews.some((c) => c.crafts.includes(t.craft));
       push({
         kind: "qualification",
-        severity: anyQualified ? "warning" : "error",
+        severity: "error",
         taskId: t.id,
-        message: anyQualified
-          ? `「${labels[t.id] ?? t.name}」尚未指派班组`
-          : `无具备【${t.craft}】资质的班组可承担「${labels[t.id] ?? t.name}」`,
+        message:
+          crews.some((c) => c.crafts.includes(t.craft))
+            ? `「${labels[t.id] ?? t.name}」尚未指派班组，补齐班组后才能确认提交`
+            : `无具备【${t.craft}】资质的班组可承担「${labels[t.id] ?? t.name}」`,
       });
     }
 
+    // 未排定开工日同样阻断提交：每道工序都必须有明确工期
     if (t.start === null) {
       push({
         kind: "dependency-order",
-        severity: "warning",
+        severity: "error",
         taskId: t.id,
-        message: `「${labels[t.id] ?? t.name}」尚未排定工期`,
+        message: `「${labels[t.id] ?? t.name}」尚未排定工期，补齐开工日后才能确认提交`,
       });
       continue;
     }

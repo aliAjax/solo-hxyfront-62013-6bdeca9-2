@@ -42,9 +42,11 @@ export interface PlanRepositoryPort {
   save(plan: Plan): void;
   listVersions(planId: string): VersionSnapshot[];
   appendVersion(snapshot: VersionSnapshot): void;
-  listDrafts(): Draft[];
+  /** 仅返回指定用户的个人草稿 */
+  listDrafts(user: string): Draft[];
   saveDraft(draft: Draft): void;
-  deleteDraft(id: string): void;
+  /** 删除草稿需校验归属：非创建人无法删除他人草稿 */
+  deleteDraft(id: string, user: string): void;
   /** 清空全部本地数据（演示重置用） */
   reset(): void;
 }
@@ -60,9 +62,12 @@ export interface ScheduleServicePort {
   patchBudget(user: string, cap: number): void;
   discardSession(user: string): void;
   commit(user: string, note: string): CommitOutcome;
-  listDrafts(): Draft[];
+  /** 仅返回当前用户自己的草稿 */
+  listDrafts(user: string): Draft[];
+  /** 仅当草稿归属当前用户时才能套用 */
   applyDraft(draftId: string, user: string): boolean;
-  deleteDraft(id: string): void;
+  /** 仅当草稿归属当前用户时才能删除 */
+  deleteDraft(id: string, user: string): void;
   listVersions(): VersionSnapshot[];
   /** 模拟"他人"在远程提交了一个新版本（用于并发冲突演示） */
   simulateRemoteCommit(remoteUser: string): Plan | null;

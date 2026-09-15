@@ -33,11 +33,9 @@ export default function App() {
   const [conflict, setConflict] = useState<CommitOutcome | null>(null);
   const [commitNote, setCommitNote] = useState("");
   const [hintDiscard, setHintDiscard] = useState(false);
-  const [drafts, setDrafts] = useState<Draft[]>(() => scheduleService.listDrafts());
 
   const refresh = () => {
     setPlan(scheduleService.getPlan());
-    setDrafts(scheduleService.listDrafts());
     setTick((t) => t + 1);
   };
 
@@ -48,6 +46,12 @@ export default function App() {
   );
   const session = scheduleService.getSession(user);
   const versions = plan ? scheduleService.listVersions() : [];
+  // 个人草稿只对当前身份可见：切换身份后重新派生
+  const drafts: Draft[] = useMemo(
+    () => (plan ? scheduleService.listDrafts(user) : []),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [plan, user, tick]
+  );
 
   const crewMap = useMemo(() => new Map(ALL_CREWS.map((c) => [c.id, c])), []);
   const crewName = (id: string | null) =>
@@ -141,11 +145,11 @@ export default function App() {
     notify(
       ok
         ? { kind: "success", text: "草稿已重放到当前最新版本（基线已更新），核对冲突后可再次提交。" }
-        : { kind: "error", text: "草稿无法套用（对应方案可能已重建）。" }
+        : { kind: "error", text: "草稿无法套用（草稿不存在、不属于当前身份或对应方案已重建）。" }
     );
   };
   const deleteDraft = (id: string) => {
-    scheduleService.deleteDraft(id);
+    scheduleService.deleteDraft(id, user);
     refresh();
   };
 

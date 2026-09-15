@@ -300,19 +300,22 @@ export class ScheduleService implements ScheduleServicePort {
     return plan ? this.repo.listVersions(plan.id) : [];
   }
 
-  listDrafts(): Draft[] {
-    return this.repo.listDrafts();
+  listDrafts(user: string): Draft[] {
+    return this.repo.listDrafts(user);
   }
 
-  deleteDraft(id: string): void {
-    this.repo.deleteDraft(id);
+  deleteDraft(id: string, user: string): void {
+    this.repo.deleteDraft(id, user);
   }
 
-  /** 把个人草稿重放到当前最新版本之上（保留个人调整，基线更新到最新） */
+  /** 把个人草稿重放到当前最新版本之上（仅创建人本人，基线更新到最新） */
   applyDraft(draftId: string, user: string): boolean {
     const plan = this.repo.load();
-    const draft = this.repo.listDrafts().find((d) => d.id === draftId);
-    if (!plan || !draft || draft.planId !== plan.id) return false;
+    // 归属校验：只能从自己的草稿列表中取用，他人草稿不可见也不可套用
+    const draft = this.repo.listDrafts(user).find((d) => d.id === draftId);
+    if (!plan || !draft || draft.planId !== plan.id || draft.user !== user) {
+      return false;
+    }
     // 草稿中涉及的工序若在最新版本中已不存在，则丢弃该部分
     const taskIds = new Set(plan.tasks.map((t) => t.id));
     const taskPatches: Record<string, TaskPatch> = {};
@@ -327,7 +330,7 @@ export class ScheduleService implements ScheduleServicePort {
         draft.budgetCap !== undefined ? draft.budgetCap : undefined,
       startedAt: Date.now(),
     });
-    this.repo.deleteDraft(draftId);
+    this.repo.deleteDraft(draftId, user);
     return true;
   }
 
